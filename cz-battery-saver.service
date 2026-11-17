@@ -1,0 +1,25 @@
+[Unit]
+Description=Battery Saver: CardputerZero power saving, deep idle with the screen off, low-battery shutdown
+# Don't order after multi-user.target: a stuck boot job (e.g. userconfig.service
+# waiting on tty8) would keep this service from ever starting.
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+# Not root: the launcher, PipeWire and the keyboard belong to the desktop user,
+# and the stock image's polkit rules let that user power off.
+User=pi
+Group=pi
+# /var/lib/cz-battery-saver, owned by pi: the app's settings and the USB flag
+StateDirectory=cz-battery-saver
+StateDirectoryMode=0755
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/bin/python3 /usr/lib/cz-battery-saver/cz-battery-saver.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

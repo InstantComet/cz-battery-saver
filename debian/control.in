@@ -1,0 +1,14 @@
+Package: cz-battery-saver
+Version: @VERSION@
+Architecture: all
+Maintainer: InstantComet <10364622+InstantComet@users.noreply.github.com>
+Section: utils
+Priority: optional
+Depends: python3, python3-pil, pulseaudio-utils, fonts-dejavu-core, systemd, udev
+Homepage: https://github.com/InstantComet/cz-battery-saver
+Description: Longer battery life for the M5Stack CardputerZero
+ Lets the internal USB Ethernet chip autosuspend (the whole USB bus then
+ sleeps, ~105 mA), parks the launcher's audio stream and pauses the launcher
+ while the screen is off (~70 mA), and shuts down cleanly at low battery.
+ Runs as the desktop user, not root. Includes the Battery Saver launcher app
+ for changing the settings on the device.

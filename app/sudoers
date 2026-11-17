@@ -1,3 +1,0 @@
-# Installed by cardzero-idle: lets the Idle Saver app change its settings.
-# admin.py accepts only a fixed, validated set of actions.
-pi ALL=(root) NOPASSWD: /usr/bin/python3 -I /usr/local/lib/cardzero-idle/admin.py *

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+    systemctl daemon-reload || true
+    systemctl enable cz-battery-saver.service || true
+    systemctl restart cz-battery-saver.service || true
+    # Apply the USB autosuspend rule to the already-present Ethernet chip.
+    udevadm control --reload || true
+    udevadm trigger --action=change --subsystem-match=usb \
+        --attr-match=idVendor=0fe6 --attr-match=idProduct=9900 || true
+fi
+exit 0

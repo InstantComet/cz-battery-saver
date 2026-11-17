@@ -1,6 +1,6 @@
-<p align="center"><img src="app/icon.png" width="100" alt="Idle Saver icon"></p>
+<p align="center"><img src="app/cz-battery-saver.png" width="100" alt="Battery Saver icon"></p>
 
-<h1 align="center">cardzero-idle</h1>
+<h1 align="center">Battery Saver for CardputerZero</h1>
 
 **Longer battery life for the M5Stack CardputerZero, with the screen on and off, plus a low-battery shutdown.**
 
@@ -8,22 +8,22 @@
 
 The CardputerZero (Raspberry Pi CM0, BCM2837) has no suspend-to-RAM. Out of the box it draws about 416 mA from the battery with the screen on and idle, and still about 395 mA after the launcher turns the screen off. That is roughly 4.2–4.4 h from the 1750 mAh cell either way.
 
-`cardzero-idle` is a small root daemon that removes most of that waste. On the author's device:
+**Battery Saver** (`cz-battery-saver`) is a small service that removes most of that waste. It runs as the desktop user `pi`, not root. On the author's device:
 
-| | Stock | With cardzero-idle | Runtime (1750 mAh) |
+| | Stock | With Battery Saver | Runtime (1750 mAh) |
 |---|---|---|---|
 | Screen on, idle | 416 mA | **311 mA** (277 mA with key sounds off) | 4.2 h → 5.6 h (6.3 h) |
 | Screen off | 395 mA | **~233 mA** | 4.4 h → 7.5 h |
 
 WiFi, SSH and Tailscale keep working, and USB devices can still be plugged in at any time.
 
-## Idle Saver app
+## Battery Saver app
 
-Installing also adds an **Idle Saver** app <img src="app/icon.png" width="20" alt=""> to the launcher, so you can change the settings on the device itself.
+The package also adds a **Battery Saver** app <img src="app/cz-battery-saver.png" width="20" alt=""> to the launcher, so you can change the settings on the device itself.
 
 <p>
-<img src="docs/screenshot-main.png" width="320" alt="Idle Saver settings list">
-<img src="docs/screenshot-info.png" width="320" alt="Idle Saver info page">
+<img src="docs/screenshot-main.png" width="320" alt="Battery Saver settings list">
+<img src="docs/screenshot-info.png" width="320" alt="Battery Saver info page">
 </p>
 
 - **Power saving**: turn the whole service on or off.
@@ -35,7 +35,7 @@ Installing also adds an **Idle Saver** app <img src="app/icon.png" width="20" al
 - **Auto shutdown**: the low-battery shutdown threshold (5–20%, or Never).
 - The header shows whether the service is running, the live battery current and the charge level. Press `I` for a short summary.
 
-Green values save power; grey values leave things as they are. Keys follow the launcher's convention: `F`/`X` move, `Z`/`C` or `Enter` change, `I` info, `Esc` back to the launcher. Each change is applied immediately: the app writes `/etc/default/cardzero-idle` through a small root helper and restarts the service.
+Green values save power; grey values leave things as they are. Keys follow the launcher's convention: `F`/`X` move, `Z`/`C` or `Enter` change, `I` info, `Esc` back to the launcher. Each change is applied within a few seconds: the app writes `/var/lib/cz-battery-saver/settings`, which the service watches. **USB + Ethernet** is the exception: it is applied by a udev rule when the device appears, so a change takes effect after a reboot.
 
 ## What it does
 
@@ -43,7 +43,7 @@ Green values save power; grey values leave things as they are. Keys follow the l
 
 | Measure | Saves (measured) | How |
 |---|---|---|
-| Let the USB bus autosuspend | ~105 mA | The internal SR9900A Ethernet chip (driven by `r8152`) supports runtime suspend, but the kernel leaves it at `power/control=on`. That keeps the GL852G hub and the `dwc2` root hub awake too, at ~8000 interrupts/s. The daemon sets it to `auto`, so with no cable plugged in the whole bus suspends and the interrupts drop to 0. Plugging in a USB device or an Ethernet cable wakes it as usual. |
+| Let the USB bus autosuspend | ~105 mA | The internal SR9900A Ethernet chip (driven by `r8152`) supports runtime suspend, but the kernel leaves it at `power/control=on`. That keeps the GL852G hub and the `dwc2` root hub awake too, at ~8000 interrupts/s. The package's udev rule (`70-cz-battery-saver.rules`) sets it to `auto` whenever the chip appears, so with no cable plugged in the whole bus suspends and the interrupts drop to 0. Plugging in a USB device or an Ethernet cable wakes it as usual. |
 | Park the launcher's audio stream (optional, off by default) | ~35 mA | See below. With the screen on it costs the launcher's key sounds, so it is opt-in (**Key sounds: Off**). |
 
 ### While the screen is off
@@ -99,38 +99,42 @@ To measure your own device, use `./measure.sh 30` (no root needed).
 
 ## Install
 
-On the CardputerZero:
+**From the AppStore:** open **Store** on the CardputerZero and install **Battery Saver** (share code `BATT`).
+
+**From source**, on the CardputerZero:
 
 ```sh
-git clone https://github.com/InstantComet/cardzero-idle.git
-cd cardzero-idle
+git clone https://github.com/InstantComet/cz-battery-saver.git
+cd cz-battery-saver
 sudo bash install.sh
 ```
 
-This installs:
-- `/usr/local/sbin/cardzero-idle.py`
-- `/etc/systemd/system/cardzero-idle.service` (enabled and started)
-- `/etc/default/cardzero-idle` (settings; an existing file is kept)
-- The Idle Saver app:
-  - `/usr/share/APPLaunch/apps/cardzero-idle/app.py`
-  - `/usr/share/APPLaunch/applications/cardzero-idle.desktop`
-  - `/usr/share/APPLaunch/share/images/cardzero-idle.png`
-  - `/usr/local/lib/cardzero-idle/admin.py` (root helper)
-  - `/etc/sudoers.d/cardzero-idle` (lets user `pi` run only that helper without a password)
+`install.sh` builds the same `.deb` the store ships (`build-deb.sh`, needs only `dpkg-deb`) and installs it with apt. It also removes an older `cardzero-idle` install (the previous name of this project) and keeps its settings.
+
+The package installs:
+- `/usr/lib/cz-battery-saver/cz-battery-saver.py`, the service
+- `/usr/lib/systemd/system/cz-battery-saver.service` (enabled and started; `User=pi`)
+- `/usr/lib/udev/rules.d/70-cz-battery-saver.rules` (USB autosuspend)
+- `/etc/default/cz-battery-saver` (default settings)
+- The Battery Saver app:
+  - `/usr/share/APPLaunch/apps/cz-battery-saver/app.py`
+  - `/usr/share/APPLaunch/applications/cz-battery-saver.desktop`
+  - `/usr/share/APPLaunch/share/images/cz-battery-saver.png`
 
 If the app does not appear in the launcher right away, restart the launcher or reboot.
 
-Check what it is doing with `journalctl -u cardzero-idle -f`. You should see lines like `usb 1-1.1: power/control=auto`, `idle: audio, launcher` and `wake: key`.
+Check what it is doing with `journalctl -u cz-battery-saver -f`. You should see lines like `idle: audio, launcher` and `wake: key`.
 
-To uninstall: `sudo bash uninstall.sh`
+To uninstall: `sudo apt remove cz-battery-saver`. USB autosuspend stays on until the next reboot.
 
 ## Settings
 
-Use the Idle Saver app, or edit `/etc/default/cardzero-idle` and run `sudo systemctl restart cardzero-idle`.
+Use the Battery Saver app. The package defaults are in `/etc/default/cz-battery-saver`; the app's choices are saved in `/var/lib/cz-battery-saver/settings` and take precedence. The service rereads both files within a few seconds of a change.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `USB_AUTOSUSPEND` | `1` | Let the internal Ethernet chip, and with it the USB bus, autosuspend. |
+| `ENABLED` | `1` | Master switch (the app's **Power saving**). `0` turns off everything below. |
+| `USB_AUTOSUSPEND` | `1` | Let the internal Ethernet chip, and with it the USB bus, autosuspend. Applies after a reboot. |
 | `AUDIO_ALWAYS` | `0` | Park the launcher's audio stream with the screen on too (no launcher key sounds). |
 | `IDLE_DELAY` | `5` | Seconds the backlight must stay off before the screen-off measures start. |
 | `IDLE_AUDIO` | `1` | Park the launcher's audio stream while the screen is off. |
@@ -142,7 +146,7 @@ Use the Idle Saver app, or edit `/etc/default/cardzero-idle` and run `sudo syste
 - Tested on a CardputerZero running Debian 13 (trixie), kernel `6.18.39+rpt-rpi-v8`, and the stock `M5CardputerZero-APPLaunch` launcher. The device user is assumed to be `pi` (uid 1000).
 - Screen-off detection reads `/sys/class/backlight/backlight/brightness == 0`, which is what the launcher's screen timeout (Settings > Screen > DarkTime) sets.
 - Audio started by another app still plays: only the launcher's own stream is moved, and the launcher is not paused while one of its apps is running.
-- The app's helper (`admin.py`) accepts only enable/disable and the exact values the app offers, so the sudoers rule cannot be used to write arbitrary settings.
+- No root at runtime: the service runs as `pi`. Pausing the launcher, moving its audio and reading the keyboard need only that user's rights; the low-battery shutdown uses the stock image's polkit rule that lets the `sudo` group power off; the one root-only setting, the USB chip's `power/control`, is written by udev.
 - The service does not wait for `multi-user.target`. On some images `userconfig.service` (the first-boot "rename user" dialog on tty8) never finishes when booting to the console, and that would block anything ordered after `multi-user.target`. If `systemctl list-jobs` shows it stuck and your user is already set up, `sudo systemctl disable userconfig.service` fixes it.
 - Don't unbind and re-bind the `imx219` camera driver at runtime. While measuring, a re-bind oopsed the kernel in `unicam_async_complete`. The daemon does not touch the camera.
 

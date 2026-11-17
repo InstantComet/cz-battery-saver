@@ -1,11 +1,11 @@
 #!/usr/bin/python3
-"""Idle Saver: APPLaunch settings app for cardzero-idle.
+"""Battery Saver: APPLaunch settings app for cz-battery-saver.service.
 
 Draws straight to the LCD framebuffer with PIL and reads the internal
-keyboard, like the other external APPLaunch apps. Settings live in
-/etc/default/cardzero-idle (root-owned); changes go through the
-root helper /usr/local/lib/cardzero-idle/admin.py via a sudoers rule
-that allows only that helper.
+keyboard, like the other external APPLaunch apps. No root needed: the app
+writes /var/lib/cz-battery-saver/settings (owned by the desktop user, created
+by the service's StateDirectory=), and the service reloads it within a few
+seconds. Package defaults live in /etc/default/cz-battery-saver.
 """
 import argparse
 import array
@@ -20,16 +20,15 @@ import signal
 import struct
 import subprocess
 import sys
-import threading
 import time
 
 from PIL import Image, ImageDraw, ImageFont
 
 HOME = Path.home()
-STATE_DIR = HOME / '.config/cardzero-idle'
-CONFIG = Path('/etc/default/cardzero-idle')
-HELPER = '/usr/local/lib/cardzero-idle/admin.py'
-UNIT = 'cardzero-idle.service'
+STATE_DIR = HOME / '.config/cz-battery-saver'
+DEFAULTS_FILE = Path('/etc/default/cz-battery-saver')
+SETTINGS_FILE = Path('/var/lib/cz-battery-saver/settings')
+UNIT = 'cz-battery-saver.service'
 BACKLIGHT = Path('/sys/class/backlight/backlight/brightness')
 BATTERY = Path('/sys/class/power_supply/bq27220-0')
 KEYBOARD = '/dev/input/cardputer-zero-internal'
@@ -48,11 +47,11 @@ GREEN = '#33e06a'     # saving power
 YELLOW = '#ffcc1a'    # attention: low battery, applying
 RED = '#ff5a52'       # error, very low battery
 
-DEFAULTS = {'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8', 'IDLE_AUDIO': '1',
+DEFAULTS = {'ENABLED': '1', 'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8', 'IDLE_AUDIO': '1',
             'IDLE_STOP_LAUNCHER': '1', 'USB_AUTOSUSPEND': '1', 'AUDIO_ALWAYS': '0'}
 # key, label, choices (None = on/off), hint shown after the label, indent
 ROWS = [
-    ('SERVICE', 'Power saving', None, '', 0),
+    ('ENABLED', 'Power saving', None, '', 0),
     ('USB_AUTOSUSPEND', 'USB + Ethernet', None, '~105 mA', 0),
     ('AUDIO_ALWAYS', 'Key sounds', None, '~35 mA', 0),
     ('IDLE_DELAY', 'After screen off', ['3', '5', '10', '20', '30', '60'], '', 0),
@@ -89,35 +88,50 @@ def unit_property(name):
         return 'unknown'
 
 
-def load_config():
-    config = dict(DEFAULTS)
-    for line in read(CONFIG, '').splitlines():
+def parse_settings(text):
+    out = {}
+    for line in text.splitlines():
         line = line.strip()
         if line and not line.startswith('#') and '=' in line:
             key, value = line.split('=', 1)
-            if key.strip() in config:
-                config[key.strip()] = value.strip().strip('"\'')
+            out[key.strip()] = value.strip().strip('"\'')
+    return out
+
+
+def load_config():
+    """Same precedence as the service: package defaults, then the app's file."""
+    config = dict(DEFAULTS)
+    for path in (DEFAULTS_FILE, SETTINGS_FILE):
+        config.update({k: v for k, v in parse_settings(read(path, '')).items() if k in config})
     return config
+
+
+def save_setting(key, value):
+    """Rewrite the app's settings file with one value changed (atomic replace)."""
+    current = {k: v for k, v in parse_settings(read(SETTINGS_FILE, '')).items() if k in DEFAULTS}
+    current[key] = value
+    body = '# Written by the Battery Saver app; overrides /etc/default/cz-battery-saver.\n'
+    body += ''.join(f'{k}={v}\n' for k, v in sorted(current.items()))
+    temporary = SETTINGS_FILE.with_name(SETTINGS_FILE.name + '.tmp')
+    temporary.write_text(body)
+    os.replace(temporary, SETTINGS_FILE)
 
 
 def status():
     try:
-        current = f"{-int(read(BATTERY / 'current_now', '0')) // 1000} mA"
+        current = f"{-int(read(BATTERY / 'current_now', '0')) // 1000} mA now"
     except ValueError:
-        current = '? mA'
+        current = '? mA now'
+    if read(BATTERY / 'status') != 'Discharging':
+        current = 'on charger'   # the gauge's current is meaningless then
     return {
         'config': load_config(),
-        'enabled': unit_property('UnitFileState') == 'enabled',
         'active': unit_property('ActiveState'),
         'installed': unit_property('LoadState') == 'loaded',
         'battery': read(BATTERY / 'capacity'),
         'charging': read(BATTERY / 'status'),
         'current': current,
     }
-
-
-def privileged(*args):
-    return command(['/usr/bin/sudo', '-n', '/usr/bin/python3', '-I', HELPER, *args])
 
 
 class Bitfield(ctypes.Structure):
@@ -171,7 +185,6 @@ class App:
         self.top = 0
         self.details = False
         self.running = True
-        self.busy = False
         self.message = ''
         self.message_until = 0
         def load(path, size):
@@ -186,12 +199,12 @@ class App:
 
     def value(self, key, choices):
         """Text and colour for a row's value."""
-        if key == 'SERVICE':
+        if key == 'ENABLED':
             if not self.state['installed']:
                 return 'Missing', RED
-            if not self.state['enabled']:
-                return 'Off', MUTED
-            return ('On', GREEN) if self.state['active'] == 'active' else ('Error', RED)
+            if self.state['active'] != 'active':
+                return 'Not running', RED
+            return ('On', GREEN) if self.on() else ('Off', MUTED)
         value = self.state['config'][key]
         if choices is None:
             saving, normal = ACTION[key]
@@ -202,13 +215,17 @@ class App:
             return value + ' s', FG
         return ('Never', MUTED) if value == '0' else ('≤ ' + value + '%', FG)
 
+    def on(self):
+        return (self.state['installed'] and self.state['active'] == 'active'
+                and self.state['config']['ENABLED'].lower() in ('1', 'yes', 'true', 'on'))
+
     def render(self):
         im = Image.new('RGB', (320, 170), BG)
         d = ImageDraw.Draw(im)
-        on = self.state['enabled'] and self.state['active'] == 'active'
+        on = self.on()
 
         # Header: title, battery, status line
-        d.text((10, 4), 'Idle Saver', font=self.title, fill=FG)
+        d.text((10, 4), 'Battery Saver', font=self.title, fill=FG)
         try:
             level = int(self.state['battery'])
         except ValueError:
@@ -217,7 +234,7 @@ class App:
         d.text((310 - d.textlength(battery, font=self.bold), 6), battery, font=self.bold,
                fill=RED if level <= 10 else YELLOW if level <= 20 else GREEN)
         d.ellipse((11, 29, 17, 35), fill=GREEN if on else MUTED)
-        d.text((22, 25), ('Running' if on else 'Stopped') + '  ·  ' + self.state['current'] + ' now',
+        d.text((22, 25), ('Saving' if on else 'Off') + '  ·  ' + self.state['current'],
                font=self.small, fill=MUTED)
 
         if self.details:
@@ -233,7 +250,7 @@ class App:
             for slot, i in enumerate(range(self.top, min(self.top + VISIBLE, len(ROWS)))):
                 key, label, choices, hint, indent = ROWS[i]
                 y = 43 + 20 * slot
-                active = key == 'SERVICE' or on
+                active = key == 'ENABLED' or on
                 if i == self.selected:
                     d.rounded_rectangle((6, y - 1, 305, y + 18), radius=4, fill=ROW)
                     d.rounded_rectangle((6, y + 2, 8, y + 15), radius=1, fill=GREEN if active else DIM)
@@ -256,11 +273,9 @@ class App:
 
         # Footer: key hints, or a status message in its place
         d.line((8, 146, 312, 146), fill=RULE)
-        if self.busy:
-            d.text((10, 152), 'Applying…', font=self.small, fill=YELLOW)
-        elif self.message and time.monotonic() < self.message_until:
+        if self.message and time.monotonic() < self.message_until:
             d.text((10, 152), self.message, font=self.small,
-                   fill=GREEN if self.message == 'Saved' else RED)
+                   fill=GREEN if self.message == 'Saved' else YELLOW if self.message.startswith('Saved') else RED)
         else:
             x = 10
             for keys, action in footer:
@@ -270,33 +285,25 @@ class App:
                 x += d.textlength(action, font=self.small) + 14
         return im
 
-    def work(self, *args):
-        self.busy = True
-
-        def execute():
-            try:
-                privileged(*args)
-                self.message = 'Saved'
-            except Exception as error:
-                print(' '.join(args), '->', error, flush=True)
-                self.message = 'Failed. See ~/.config/cardzero-idle/app.log'
-            finally:
-                self.state = status()
-                self.message_until = time.monotonic() + 4
-                self.busy = False
-        threading.Thread(target=execute, daemon=True).start()
+    def apply(self, key, value):
+        try:
+            save_setting(key, value)
+            # The udev rule reads the USB setting only when the device appears.
+            self.message = 'Saved · applies after a reboot' if key == 'USB_AUTOSUSPEND' else 'Saved'
+        except OSError as error:
+            print(key, value, '->', error, flush=True)
+            self.message = 'Failed. See ~/.config/cz-battery-saver/app.log'
+        self.state = status()
+        self.message_until = time.monotonic() + 4
 
     def change(self, step):
         key, _, choices, _, _ = ROWS[self.selected]
-        if key == 'SERVICE':
-            if not self.state['installed']:
-                self.message, self.message_until = 'cardzero-idle is not installed', time.monotonic() + 4
-                return
-            self.work('disable' if self.state['enabled'] else 'enable')
+        if not self.state['installed']:
+            self.message, self.message_until = 'cz-battery-saver is not installed', time.monotonic() + 4
             return
         current = self.state['config'][key]
         if choices is None:
-            self.work('set', key, '0' if current.lower() in ('1', 'yes', 'true', 'on') else '1')
+            self.apply(key, '0' if current.lower() in ('1', 'yes', 'true', 'on') else '1')
             return
         index = choices.index(current) if current in choices else 0
         if step == 0:  # ENTER cycles forward with wrap-around
@@ -304,11 +311,9 @@ class App:
         else:
             index = max(0, min(len(choices) - 1, index + step))
         if choices[index] != current:
-            self.work('set', key, choices[index])
+            self.apply(key, choices[index])
 
     def key(self, code):
-        if self.busy:
-            return
         # APPLaunch navigation contract: F/X/Z/C act as arrows without Fn.
         code = {33: 103, 45: 108, 44: 105, 46: 106}.get(code, code)
         if code in (1, 41):  # Esc, or bare backtick on the compact keyboard
@@ -352,7 +357,7 @@ def run():
     try:
         while app.running:
             now = time.monotonic()
-            if now - last >= 2 and not app.busy:
+            if now - last >= 2:
                 app.state = status()
                 last = now
             frame.draw(app.render())

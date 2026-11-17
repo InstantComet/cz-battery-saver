@@ -1,0 +1,8 @@
+# cz-battery-saver: let the CardputerZero's internal SR9900A USB Ethernet chip
+# (0fe6:9900, r8152 driver) runtime-suspend. The kernel leaves it at
+# power/control=on, which keeps the USB hub and the dwc2 root hub awake
+# (~8000 interrupts/s, ~105 mA). With "auto" the whole bus sleeps while no cable
+# or device is plugged in; hot-plug still works.
+# Skipped while /var/lib/cz-battery-saver/usb-keep-on exists (the app's
+# "USB + Ethernet: Keep on" setting).
+ACTION!="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0fe6", ATTR{idProduct}=="9900", TEST!="/var/lib/cz-battery-saver/usb-keep-on", ATTR{power/control}="auto"

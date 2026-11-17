@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Battery Saver
+Comment=Longer battery life: USB autosuspend, deep idle with the screen off, low-battery shutdown
+Exec=/usr/bin/python3 /usr/share/APPLaunch/apps/cz-battery-saver/app.py
+Icon=share/images/cz-battery-saver.png
+Terminal=false
+Categories=Settings;
+StartupNotify=false

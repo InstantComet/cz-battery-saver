@@ -1,9 +1,12 @@
-# Settings for cardzero-idle.service (the Idle Saver app edits this file).
-# Restart the service after editing by hand:
-#   sudo systemctl restart cardzero-idle
+# Default settings for cz-battery-saver.service.
+# The Battery Saver app writes your choices to /var/lib/cz-battery-saver/settings,
+# which overrides this file. Changes to either file apply within a few seconds.
 
+# Master switch (1/0).
+ENABLED=1
 # Always on: let the internal USB Ethernet chip autosuspend, so the whole USB
-# bus can sleep while nothing is plugged in. Hot-plug keeps working. (1/0)
+# bus can sleep while nothing is plugged in. Hot-plug keeps working. Applied by
+# the udev rule at boot, so changing it takes effect after a reboot. (1/0)
 USB_AUTOSUSPEND=1
 # Also park the launcher's audio stream while the screen is on. Saves ~35 mA
 # but silences the launcher's key sounds. Other apps' sound is unaffected. (1/0)
