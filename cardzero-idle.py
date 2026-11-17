@@ -335,10 +335,17 @@ def main():
     dark_since = None
     low_count = 0
     next_battery = 0.0
+    next_keyboard_scan = time.monotonic() + 5
     try:
         while True:
             key = drain_keys(keyboards, 1.0)
             now = time.monotonic()
+            if not keyboards and now >= next_keyboard_scan:
+                # Early in boot the keyboard may not exist yet; keep looking.
+                next_keyboard_scan = now + 5
+                keyboards = open_keyboards()
+                if keyboards:
+                    log(f'keyboards={len(keyboards)}')
             bright = read(BACKLIGHT, '1') != '0'
 
             if idle.active:

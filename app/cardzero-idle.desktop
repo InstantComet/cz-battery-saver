@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Idle Saver
+Comment=Screen-off power saving and low-battery shutdown (cardzero-idle)
+Exec=/usr/bin/python3 /usr/share/APPLaunch/apps/cardzero-idle/app.py
+Icon=/usr/share/APPLaunch/share/images/cardzero-idle.png
+Terminal=false
+Categories=Settings;
+StartupNotify=false

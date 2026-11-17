@@ -1,4 +1,6 @@
-# cardzero-idle
+<p align="center"><img src="app/icon.png" width="100" alt="Idle Saver icon"></p>
+
+<h1 align="center">cardzero-idle</h1>
 
 **Deep idle for the M5Stack CardputerZero while the screen is off, plus a low-battery shutdown.**
 
@@ -7,6 +9,23 @@
 The CardputerZero (Raspberry Pi CM0, BCM2837) has no suspend-to-RAM. When the launcher turns the screen off, the device keeps drawing almost as much power as with the screen on: about 395 mA from the battery, or roughly 4.4 h from the 1750 mAh cell.
 
 `cardzero-idle` is a small root daemon. It notices when the backlight has been off for a few seconds and then cuts the power that is wasted while the screen is off. Pressing any key restores everything, and the key still wakes the screen as usual. On the author's device this brought **screen-off current from ~395 mA down to ~231 mA**, roughly **4.4 h → 7.5 h** of screen-off runtime with WiFi kept on.
+
+## Idle Saver app
+
+Installing also adds an **Idle Saver** app <img src="app/icon.png" width="20" alt=""> to the launcher, so you can change the settings on the device itself.
+
+<p>
+<img src="docs/screenshot-main.png" width="320" alt="Idle Saver settings list">
+<img src="docs/screenshot-info.png" width="320" alt="Idle Saver info page">
+</p>
+
+- **Deep idle**: turn the whole service on or off.
+- **After screen off**: how long the screen must be off before deep idle starts (3–60 s).
+- **USB + Ethernet / Sound card / Launcher**: choose whether each one is put to sleep (or paused) while the screen is off, or kept on. The estimated saving is shown next to each item.
+- **Auto shutdown**: the low-battery shutdown threshold (5–20%, or Never).
+- The header shows whether the service is running, the live battery current and the charge level. Press `I` for a short explanation.
+
+Keys follow the launcher's convention: `F`/`X` move, `Z`/`C` or `Enter` change, `I` info, `Esc` back to the launcher. Each change is applied immediately: the app writes `/etc/default/cardzero-idle` through a small root helper and restarts the service.
 
 ## What it does while the screen is off
 
@@ -62,6 +81,14 @@ This installs:
 - `/usr/local/sbin/cardzero-idle.py`
 - `/etc/systemd/system/cardzero-idle.service` (enabled and started)
 - `/etc/default/cardzero-idle` (settings; an existing file is kept)
+- The Idle Saver app:
+  - `/usr/share/APPLaunch/apps/cardzero-idle/app.py`
+  - `/usr/share/APPLaunch/applications/cardzero-idle.desktop`
+  - `/usr/share/APPLaunch/share/images/cardzero-idle.png`
+  - `/usr/local/lib/cardzero-idle/admin.py` (root helper)
+  - `/etc/sudoers.d/cardzero-idle` (lets user `pi` run only that helper without a password)
+
+If the app does not appear in the launcher right away, restart the launcher or reboot.
 
 Check what it is doing with `journalctl -u cardzero-idle -f`. You should see lines like `idle: audio, usb, launcher` and `wake: key`.
 
@@ -69,7 +96,7 @@ To uninstall: `sudo bash uninstall.sh`
 
 ## Settings
 
-Settings live in `/etc/default/cardzero-idle`. Run `sudo systemctl restart cardzero-idle` after changing them.
+Use the Idle Saver app, or edit `/etc/default/cardzero-idle` and run `sudo systemctl restart cardzero-idle`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -85,6 +112,8 @@ Settings live in `/etc/default/cardzero-idle`. Run `sudo systemctl restart cardz
 - Screen-off detection reads `/sys/class/backlight/backlight/brightness == 0`, which is what the launcher's screen timeout (Settings > Screen > DarkTime) sets.
 - While idle, USB devices and USB Ethernet are offline. WiFi stays up, so SSH and Tailscale keep working.
 - Audio started by another app while the screen is off still plays: only the launcher's own stream is moved, and the launcher is not paused while one of its apps is running.
+- The app's helper (`admin.py`) accepts only enable/disable and the exact values the app offers, so the sudoers rule cannot be used to write arbitrary settings.
+- The service does not wait for `multi-user.target`. On some images `userconfig.service` (the first-boot "rename user" dialog on tty8) never finishes when booting to the console, and that would block anything ordered after `multi-user.target`. If `systemctl list-jobs` shows it stuck and your user is already set up, `sudo systemctl disable userconfig.service` fixes it.
 - Don't unbind and re-bind the `imx219` camera driver at runtime. While measuring, a re-bind oopsed the kernel in `unicam_async_complete`. The daemon does not touch the camera.
 - The left-side USB Host/Slave switch also cuts the hub. The daemon does the same thing in software, so you don't have to move the switch.
 
