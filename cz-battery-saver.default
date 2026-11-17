@@ -18,5 +18,10 @@ IDLE_DELAY=5
 IDLE_AUDIO=1
 IDLE_STOP_LAUNCHER=1
 
+# With Desk Mode (cz-desk-mode) installed: close its HDMI desktop after HDMI
+# has been unplugged for this many minutes (0 = never). Unsaved work in the
+# desktop's apps is lost, so this is off by default.
+DESKTOP_UNPLUG_MINUTES=0
+
 # Shut down cleanly at or below this battery percentage while discharging (0 = off).
 LOW_BATTERY_PERCENT=8

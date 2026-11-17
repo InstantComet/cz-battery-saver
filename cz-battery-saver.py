@@ -24,6 +24,11 @@ seconds:
 Any key on the keyboard (or the backlight coming back on) restores
 everything; the launcher then reads the queued key and wakes the screen.
 
+With Desk Mode (cz-desk-mode) installed: closes its HDMI desktop once HDMI
+has been unplugged for DESKTOP_UNPLUG_MINUTES (0 = never), which frees
+~55 MB of RAM and the desktop's background work. The desktop runs as the
+desktop user's own systemd unit, so no root is needed.
+
 Also shuts the system down cleanly when the battery is discharging and at
 or below LOW_BATTERY_PERCENT.
 
@@ -58,6 +63,7 @@ DEFAULTS = {
     'IDLE_STOP_LAUNCHER': '1',
     'USB_AUTOSUSPEND': '1',
     'AUDIO_ALWAYS': '0',
+    'DESKTOP_UNPLUG_MINUTES': '0',   # close Desk Mode's desktop after HDMI unplug
 }
 
 
@@ -113,11 +119,13 @@ class Config:
         self.stop_launcher = flag('IDLE_STOP_LAUNCHER')
         self.usb_autosuspend = flag('USB_AUTOSUSPEND')
         self.audio_always = flag('AUDIO_ALWAYS')
+        self.desktop_unplug = num('DESKTOP_UNPLUG_MINUTES')
 
     def describe(self):
         return (f'enabled={self.enabled} delay={self.idle_delay}s low_battery={self.low_battery}% '
                 f'audio={self.audio} audio_always={self.audio_always} '
-                f'launcher={self.stop_launcher} usb_autosuspend={self.usb_autosuspend}')
+                f'launcher={self.stop_launcher} usb_autosuspend={self.usb_autosuspend} '
+                f'desktop_unplug={self.desktop_unplug}min')
 
 
 BACKLIGHT = '/sys/class/backlight/backlight/brightness'
@@ -125,6 +133,7 @@ BATTERY = '/sys/class/power_supply/bq27220-0'
 LAUNCHER_PATH = '/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch'
 KEYBOARD_NAMES = ('tca8418c',)
 NULL_SINK = 'cz_battery_saver_null'
+DESKTOP_UNIT = 'cz-desk-mode-desktop.service'   # Desk Mode's HDMI desktop (user unit)
 
 EVENT_FMT = 'llHHi'          # struct input_event on 64-bit
 EVENT_SIZE = struct.calcsize(EVENT_FMT)
@@ -287,6 +296,32 @@ def drain_keys(fds, timeout):
     return pressed
 
 
+# ------------------------------------------------------------ HDMI desktop
+
+def hdmi_connected():
+    return any(read(p) == 'connected' for p in glob.glob('/sys/class/drm/card*-HDMI-A-*/status'))
+
+
+class DesktopUnplug:
+    """Close Desk Mode's desktop after HDMI has been unplugged for a while."""
+
+    def __init__(self):
+        self.unplugged_since = None
+
+    def check(self, cfg, now):
+        if not cfg.enabled or cfg.desktop_unplug <= 0 or hdmi_connected():
+            self.unplugged_since = None
+            return
+        if self.unplugged_since is None:
+            self.unplugged_since = now
+        elif now - self.unplugged_since >= cfg.desktop_unplug * 60:
+            self.unplugged_since = None
+            rc, out = run(['systemctl', '--user', 'is-active', DESKTOP_UNIT])
+            if out.strip() == 'active':
+                log(f'HDMI unplugged for {cfg.desktop_unplug} min: closing the desktop')
+                run(['systemctl', '--user', 'stop', DESKTOP_UNIT], timeout=30)
+
+
 # -------------------------------------------------------------------- main
 
 class Idle:
@@ -367,6 +402,7 @@ def battery_low(cfg):
 def main():
     cfg = Config()
     idle = Idle(cfg)
+    unplug = DesktopUnplug()
 
     def on_term(*_):
         raise SystemExit(0)
@@ -425,6 +461,7 @@ def main():
 
             if now >= next_battery:
                 next_battery = now + 20
+                unplug.check(cfg, now)
                 low_count = low_count + 1 if battery_low(cfg) else 0
                 if low_count >= cfg.low_battery_confirm:
                     log(f'battery at {read(BATTERY + "/capacity")}%, shutting down')

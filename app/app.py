@@ -49,7 +49,8 @@ YELLOW = '#ffcc1a'    # attention: low battery, applying
 RED = '#ff5a52'       # error, very low battery
 
 DEFAULTS = {'ENABLED': '1', 'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8', 'IDLE_AUDIO': '1',
-            'IDLE_STOP_LAUNCHER': '1', 'USB_AUTOSUSPEND': '1', 'AUDIO_ALWAYS': '0'}
+            'IDLE_STOP_LAUNCHER': '1', 'USB_AUTOSUSPEND': '1', 'AUDIO_ALWAYS': '0',
+            'DESKTOP_UNPLUG_MINUTES': '0'}
 # key, label, choices (None = on/off), hint shown after the label, indent
 ROWS = [
     ('ENABLED', 'Power saving', None, '', 0),
@@ -60,6 +61,9 @@ ROWS = [
     ('IDLE_STOP_LAUNCHER', 'Launcher', None, '~30 mA', 1),
     ('LOW_BATTERY_PERCENT', 'Auto shutdown', ['0', '5', '8', '10', '15', '20'], '', 0),
 ]
+# Shown only with Desk Mode installed: its HDMI desktop is what this closes.
+DESK_MODE = Path('/usr/lib/cz-desk-mode')
+DESKTOP_ROW = ('DESKTOP_UNPLUG_MINUTES', 'HDMI unplugged', ['0', '1', '5', '15', '30'], '', 0)
 # Value shown for each on/off setting: (when 1, when 0). Green = saving power.
 ACTION = {'USB_AUTOSUSPEND': ('Auto sleep', 'Keep on'),
           'AUDIO_ALWAYS': ('Off', 'On'),
@@ -223,7 +227,12 @@ class App:
             return normal, MUTED
         if key == 'IDLE_DELAY':
             return value + ' s', FG
+        if key == 'DESKTOP_UNPLUG_MINUTES':
+            return ('Keep desktop', MUTED) if value == '0' else ('Close in ' + value + ' min', GREEN)
         return ('Never', MUTED) if value == '0' else ('≤ ' + value + '%', FG)
+
+    def rows(self):
+        return ROWS + ([DESKTOP_ROW] if DESK_MODE.is_dir() else [])
 
     def on(self):
         return (self.state['installed'] and self.state['active'] == 'active'
@@ -262,8 +271,9 @@ class App:
                 d.text((12, 43 + i * 17 + (2 if i >= 2 else 0)), line, font=self.font if i < 2 else self.small, fill=colour)
             footer = [('ESC', 'Back')]
         else:
-            for slot, i in enumerate(range(self.top, min(self.top + VISIBLE, len(ROWS)))):
-                key, label, choices, hint, indent = ROWS[i]
+            rows = self.rows()
+            for slot, i in enumerate(range(self.top, min(self.top + VISIBLE, len(rows)))):
+                key, label, choices, hint, indent = rows[i]
                 y = 43 + 20 * slot
                 active = key == 'ENABLED' or on
                 if i == self.selected:
@@ -279,9 +289,9 @@ class App:
                 text, colour = self.value(key, choices)
                 d.text((298 - d.textlength(text, font=self.bold), y), text, font=self.bold,
                        fill=colour if active else DIM)
-            if len(ROWS) > VISIBLE:  # scroll bar
-                h = 100 * VISIBLE // len(ROWS)
-                y0 = 42 + (100 - h) * self.top // (len(ROWS) - VISIBLE)
+            if len(rows) > VISIBLE:  # scroll bar
+                h = 100 * VISIBLE // len(rows)
+                y0 = 42 + (100 - h) * self.top // (len(rows) - VISIBLE)
                 d.rounded_rectangle((311, 42, 313, 142), radius=1, fill=RULE)
                 d.rounded_rectangle((311, y0, 313, y0 + h), radius=1, fill=FAINT)
             footer = [('F/X', 'Move'), ('Z/C', 'Change'), ('I', 'Info'), ('ESC', 'Exit')]
@@ -312,7 +322,7 @@ class App:
         self.message_until = time.monotonic() + 4
 
     def change(self, step):
-        key, _, choices, _, _ = ROWS[self.selected]
+        key, _, choices, _, _ = self.rows()[self.selected]
         if not self.state['installed']:
             self.message, self.message_until = 'cz-battery-saver is not installed', time.monotonic() + 4
             return
@@ -342,10 +352,11 @@ class App:
             return
         if self.details:
             return
+        count = len(self.rows())
         if code in (103, 17, 39):  # Up, W, ;
-            self.selected = (self.selected - 1) % len(ROWS)
+            self.selected = (self.selected - 1) % count
         elif code in (108, 31, 52):  # Down, S, .
-            self.selected = (self.selected + 1) % len(ROWS)
+            self.selected = (self.selected + 1) % count
         elif code in (28, 57):  # Enter, Space
             self.change(0)
         elif code in (105, 30, 51):  # Left, A, ,
