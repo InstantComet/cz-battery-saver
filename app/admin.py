@@ -19,7 +19,8 @@ ALLOWED = {
     'LOW_BATTERY_PERCENT': {'0', '5', '8', '10', '15', '20'},
     'IDLE_AUDIO': {'0', '1'},
     'IDLE_STOP_LAUNCHER': {'0', '1'},
-    'IDLE_USB': {'0', '1'},
+    'USB_AUTOSUSPEND': {'0', '1'},
+    'AUDIO_ALWAYS': {'0', '1'},
 }
 
 

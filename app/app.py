@@ -48,19 +48,23 @@ GREEN = '#33e06a'     # saving power
 YELLOW = '#ffcc1a'    # attention: low battery, applying
 RED = '#ff5a52'       # error, very low battery
 
-DEFAULTS = {'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8',
-            'IDLE_AUDIO': '1', 'IDLE_STOP_LAUNCHER': '1', 'IDLE_USB': '1'}
-# key, label, choices (None = on/off), hint shown after the label
+DEFAULTS = {'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8', 'IDLE_AUDIO': '1',
+            'IDLE_STOP_LAUNCHER': '1', 'USB_AUTOSUSPEND': '1', 'AUDIO_ALWAYS': '0'}
+# key, label, choices (None = on/off), hint shown after the label, indent
 ROWS = [
-    ('SERVICE', 'Deep idle', None, ''),
-    ('IDLE_DELAY', 'After screen off', ['3', '5', '10', '20', '30', '60'], ''),
-    ('IDLE_USB', 'USB + Ethernet', None, '~90 mA'),
-    ('IDLE_AUDIO', 'Sound card', None, '~40 mA'),
-    ('IDLE_STOP_LAUNCHER', 'Launcher', None, '~30 mA'),
-    ('LOW_BATTERY_PERCENT', 'Auto shutdown', ['0', '5', '8', '10', '15', '20'], ''),
+    ('SERVICE', 'Power saving', None, '', 0),
+    ('USB_AUTOSUSPEND', 'USB + Ethernet', None, '~105 mA', 0),
+    ('AUDIO_ALWAYS', 'Key sounds', None, '~35 mA', 0),
+    ('IDLE_DELAY', 'After screen off', ['3', '5', '10', '20', '30', '60'], '', 0),
+    ('IDLE_AUDIO', 'Sound card', None, '~40 mA', 1),
+    ('IDLE_STOP_LAUNCHER', 'Launcher', None, '~30 mA', 1),
+    ('LOW_BATTERY_PERCENT', 'Auto shutdown', ['0', '5', '8', '10', '15', '20'], '', 0),
 ]
-# What each on/off measure does to its device while the screen is off.
-ACTION = {'IDLE_USB': 'Sleep', 'IDLE_AUDIO': 'Sleep', 'IDLE_STOP_LAUNCHER': 'Pause'}
+# Value shown for each on/off setting: (when 1, when 0). Green = saving power.
+ACTION = {'USB_AUTOSUSPEND': ('Auto sleep', 'Keep on'),
+          'AUDIO_ALWAYS': ('Off', 'On'),
+          'IDLE_AUDIO': ('Sleep', 'Keep on'),
+          'IDLE_STOP_LAUNCHER': ('Pause', 'Keep on')}
 VISIBLE = 5
 
 
@@ -190,9 +194,10 @@ class App:
             return ('On', GREEN) if self.state['active'] == 'active' else ('Error', RED)
         value = self.state['config'][key]
         if choices is None:
+            saving, normal = ACTION[key]
             if value.lower() in ('1', 'yes', 'true', 'on'):
-                return ACTION[key], GREEN
-            return 'Keep on', MUTED
+                return saving, GREEN
+            return normal, MUTED
         if key == 'IDLE_DELAY':
             return value + ' s', FG
         return ('Never', MUTED) if value == '0' else ('≤ ' + value + '%', FG)
@@ -216,25 +221,28 @@ class App:
                font=self.small, fill=MUTED)
 
         if self.details:
-            lines = [('Screen off: ~395 → ~231 mA', FG),
-                     ('Any key wakes. WiFi and SSH stay on.', MUTED),
-                     ('USB is kept on while a cable or', MUTED),
-                     ('USB device is plugged in.', MUTED),
-                     ('Shutdown after 3 low readings, 20 s apart.', MUTED)]
+            lines = [('Screen on: ~416 → ~311 mA', FG),
+                     ('Screen off: ~395 → ~233 mA', FG),
+                     ('USB sleeps only while unused; plugging', MUTED),
+                     ('in a device or cable wakes it.', MUTED),
+                     ('Any key wakes from screen-off idle.', MUTED)]
             for i, (line, colour) in enumerate(lines):
-                d.text((12, 45 + i * 19), line, font=self.font if i == 0 else self.small, fill=colour)
+                d.text((12, 44 + i * 19 + (2 if i >= 2 else 0)), line, font=self.font if i < 2 else self.small, fill=colour)
             footer = [('ESC', 'Back')]
         else:
             for slot, i in enumerate(range(self.top, min(self.top + VISIBLE, len(ROWS)))):
-                key, label, choices, hint = ROWS[i]
+                key, label, choices, hint, indent = ROWS[i]
                 y = 43 + 20 * slot
                 active = key == 'SERVICE' or on
                 if i == self.selected:
                     d.rounded_rectangle((6, y - 1, 305, y + 18), radius=4, fill=ROW)
                     d.rounded_rectangle((6, y + 2, 8, y + 15), radius=1, fill=GREEN if active else DIM)
-                d.text((14, y), label, font=self.font, fill=FG if active else DIM)
+                x = 14 + 14 * indent
+                if indent:
+                    d.text((x - 12, y), '└', font=self.font, fill=RULE if not active else FAINT)
+                d.text((x, y), label, font=self.font, fill=FG if active else DIM)
                 if hint:
-                    d.text((20 + d.textlength(label, font=self.font), y + 3), hint, font=self.small,
+                    d.text((x + 6 + d.textlength(label, font=self.font), y + 3), hint, font=self.small,
                            fill=FAINT if active else DIM)
                 text, colour = self.value(key, choices)
                 d.text((298 - d.textlength(text, font=self.bold), y), text, font=self.bold,
@@ -279,7 +287,7 @@ class App:
         threading.Thread(target=execute, daemon=True).start()
 
     def change(self, step):
-        key, _, choices, _ = ROWS[self.selected]
+        key, _, choices, _, _ = ROWS[self.selected]
         if key == 'SERVICE':
             if not self.state['installed']:
                 self.message, self.message_until = 'cardzero-idle is not installed', time.monotonic() + 4

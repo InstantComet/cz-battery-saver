@@ -8,7 +8,11 @@ python3 -m py_compile cardzero-idle.py app/app.py app/admin.py
 # Daemon
 install -m 0755 cardzero-idle.py /usr/local/sbin/cardzero-idle.py
 install -m 0644 cardzero-idle.service /etc/systemd/system/cardzero-idle.service
-[ -f /etc/default/cardzero-idle ] || install -m 0644 cardzero-idle.default /etc/default/cardzero-idle
+if [ -f /etc/default/cardzero-idle ]; then
+  sed -i '/^IDLE_USB=/d' /etc/default/cardzero-idle   # replaced by USB_AUTOSUSPEND
+else
+  install -m 0644 cardzero-idle.default /etc/default/cardzero-idle
+fi
 
 # Launcher app (needs the stock APPLaunch launcher)
 if [ -d /usr/share/APPLaunch/applications ]; then

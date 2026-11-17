@@ -1,10 +1,19 @@
-# Settings for cardzero-idle.service; restart the service after editing:
+# Settings for cardzero-idle.service (the Idle Saver app edits this file).
+# Restart the service after editing by hand:
 #   sudo systemctl restart cardzero-idle
-# Seconds the backlight must stay off before deep idle starts.
+
+# Always on: let the internal USB Ethernet chip autosuspend, so the whole USB
+# bus can sleep while nothing is plugged in. Hot-plug keeps working. (1/0)
+USB_AUTOSUSPEND=1
+# Also park the launcher's audio stream while the screen is on. Saves ~35 mA
+# but silences the launcher's key sounds. Other apps' sound is unaffected. (1/0)
+AUDIO_ALWAYS=0
+
+# Seconds the backlight must stay off before the screen-off measures start.
 IDLE_DELAY=5
-# Shut down cleanly at or below this battery percentage while discharging (0 = off).
-LOW_BATTERY_PERCENT=8
-# Individual measures (1 = on, 0 = off).
+# Screen-off measures (1 = on, 0 = off).
 IDLE_AUDIO=1
 IDLE_STOP_LAUNCHER=1
-IDLE_USB=1
+
+# Shut down cleanly at or below this battery percentage while discharging (0 = off).
+LOW_BATTERY_PERCENT=8

@@ -1,15 +1,22 @@
 #!/usr/bin/python3
-"""CardputerZero deep-idle daemon.
+"""CardputerZero power-saving daemon.
+
+Always (screen on or off):
+  * internal USB Ethernet chip -> runtime autosuspend (power/control=auto).
+                              The kernel leaves it "on", which keeps the
+                              whole USB bus awake (8000 IRQ/s). With it
+                              suspended the hub and root hub follow; hot-plug
+                              still works                          (~105 mA)
+  * launcher audio stream  -> optionally parked on a null sink even with the
+                              screen on (AUDIO_ALWAYS); costs the launcher's
+                              key sounds                            (~35 mA)
 
 When the launcher turns the backlight off (brightness 0) for IDLE_DELAY
-seconds, cut the power the device keeps burning with the screen off:
-
+seconds:
   * launcher audio stream  -> moved to a null sink, so the real sound card
                               (ES8389 + I2S DMA) suspends          (~40 mA)
   * launcher process       -> SIGSTOP, it keeps redrawing the LCD
                               over SPI even with the backlight off  (~30 mA)
-  * USB host (dwc2)        -> unbound, hub + SR9900A suspend and the
-                              8000 IRQ/s SOF storm stops            (~90 mA)
 
 Any key on the keyboard (or the backlight coming back on) restores
 everything; the launcher then reads the queued key and wakes the screen.
@@ -17,7 +24,7 @@ everything; the launcher then reads the queued key and wakes the screen.
 Also shuts the system down cleanly when the battery is discharging and at
 or below LOW_BATTERY_PERCENT.
 
-Runs as root (dwc2 unbind needs it). Every step is best-effort and is undone
+Runs as root (sysfs power control needs it). Every step is best-effort and is undone
 on wake, on exit and at startup (in case a previous run crashed).
 """
 
@@ -45,7 +52,8 @@ LOW_BATTERY_PERCENT = env_int('LOW_BATTERY_PERCENT', 8)  # 0 disables
 LOW_BATTERY_CONFIRM = env_int('LOW_BATTERY_CONFIRM', 3)  # consecutive 20 s checks
 DO_AUDIO = env_bool('IDLE_AUDIO', True)
 DO_LAUNCHER = env_bool('IDLE_STOP_LAUNCHER', True)
-DO_USB = env_bool('IDLE_USB', True)
+DO_AUTOSUSPEND = env_bool('USB_AUTOSUSPEND', True)
+AUDIO_ALWAYS = env_bool('AUDIO_ALWAYS', False)
 
 USER = 'pi'
 UID = 1000
@@ -55,8 +63,8 @@ LAUNCHER_PATH = '/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch'
 KEYBOARD_NAMES = ('tca8418c',)
 DWC2_DRIVER = '/sys/bus/platform/drivers/dwc2'
 DWC2_DEV = '3f980000.usb'
-# Devices that are always on the internal bus: root hub, GL852G hub, SR9900A NIC.
-KNOWN_USB = {('1d6b', '0002'), ('05e3', '0610'), ('0fe6', '9900')}
+# Internal USB devices the kernel leaves at power/control=on: SR9900A NIC (r8152).
+AUTOSUSPEND_USB = {('0fe6', '9900')}
 NULL_SINK = 'cardzero_idle_null'
 
 EVENT_FMT = 'llHHi'          # struct input_event on 64-bit
@@ -82,10 +90,15 @@ def write(path, value):
 
 
 def run(args, timeout=10, as_user=False):
+    kw = {}
     if as_user and os.geteuid() == 0:
-        args = ['runuser', '-u', USER, '--', 'env', f'XDG_RUNTIME_DIR=/run/user/{UID}'] + args
+        # Switch uid directly instead of runuser: no PAM session (and no journal
+        # noise) for every pactl call.
+        kw = dict(user=UID, group=UID, extra_groups=[],
+                  env={'XDG_RUNTIME_DIR': f'/run/user/{UID}', 'HOME': f'/home/{USER}',
+                       'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
     try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, **kw)
         return r.returncode, r.stdout
     except (OSError, subprocess.TimeoutExpired) as e:
         log('command failed:', ' '.join(args), e)
@@ -177,24 +190,21 @@ def usb_bound():
     return os.path.exists(os.path.join(DWC2_DRIVER, DWC2_DEV))
 
 
-def usb_idle_ok():
-    """Only cut USB if nothing but the internal hub + NIC is there and no cable."""
-    if read('/sys/class/net/eth0/carrier', '0') == '1':
-        return False
-    if not glob.glob('/sys/bus/usb/devices/usb*'):
-        return False          # not in host mode (gadget / Slave), leave it alone
+def usb_autosuspend(enable):
+    """Set runtime PM on the internal NIC. Re-run often: it resets on re-enumeration."""
+    want = 'auto' if enable else 'on'
     for d in glob.glob('/sys/bus/usb/devices/*'):
-        vid, pid = read(d + '/idVendor'), read(d + '/idProduct')
-        if vid and (vid, pid) not in KNOWN_USB:
-            return False
-    return True
-
-
-def usb_off():
-    write(os.path.join(DWC2_DRIVER, 'unbind'), DWC2_DEV)
+        if (read(d + '/idVendor'), read(d + '/idProduct')) in AUTOSUSPEND_USB:
+            if read(d + '/power/control') not in ('', want):
+                try:
+                    write(d + '/power/control', want)
+                    log(f'usb {os.path.basename(d)}: power/control={want}')
+                except OSError as e:
+                    log('usb autosuspend failed:', e)
 
 
 def usb_on():
+    """Only used to undo the dwc2 unbind of older versions."""
     if not usb_bound():
         write(os.path.join(DWC2_DRIVER, 'bind'), DWC2_DEV)
 
@@ -238,26 +248,13 @@ class Idle:
         self.active = False
         self.stopped_pid = None
         self.moved = {}
-        self.usb_cut = False
 
     def enter(self):
         pid = launcher_pid()
         busy = pid is None or has_children(pid)   # an app is in front: be gentle
         steps = []
-        if DO_AUDIO and pid:
-            try:
-                self.moved = audio_park(pid)
-                if self.moved:
-                    steps.append('audio')
-            except Exception as e:
-                log('audio park failed:', e)
-        if DO_USB and usb_idle_ok():
-            try:
-                usb_off()
-                self.usb_cut = True
-                steps.append('usb')
-            except OSError as e:
-                log('usb off failed:', e)
+        if DO_AUDIO and pid and self.park_audio(pid):
+            steps.append('audio')
         if DO_LAUNCHER and pid and not busy:
             try:
                 os.kill(pid, signal.SIGSTOP)
@@ -275,20 +272,26 @@ class Idle:
             except OSError:
                 pass
             self.stopped_pid = None
+        if not AUDIO_ALWAYS or why == 'exit':
+            self.restore_audio()
+        self.active = False
+        log('wake:', why)
+
+    def park_audio(self, pid):
+        """Park the launcher's streams (new ones too); True if any are parked."""
+        try:
+            self.moved.update(audio_park(pid))
+        except Exception as e:
+            log('audio park failed:', e)
+        return bool(self.moved)
+
+    def restore_audio(self):
         if self.moved:
             try:
                 audio_restore(self.moved)
             except Exception as e:
                 log('audio restore failed:', e)
             self.moved = {}
-        if self.usb_cut:
-            try:
-                usb_on()
-            except OSError as e:
-                log('usb on failed:', e)
-            self.usb_cut = False
-        self.active = False
-        log('wake:', why)
 
 
 def cleanup_leftovers():
@@ -330,12 +333,14 @@ def main():
     cleanup_leftovers()
     keyboards = open_keyboards()
     log(f'started: delay={IDLE_DELAY}s low_battery={LOW_BATTERY_PERCENT}% '
-        f'audio={DO_AUDIO} launcher={DO_LAUNCHER} usb={DO_USB} keyboards={len(keyboards)}')
+        f'audio={DO_AUDIO} audio_always={AUDIO_ALWAYS} launcher={DO_LAUNCHER} '
+        f'usb_autosuspend={DO_AUTOSUSPEND} keyboards={len(keyboards)}')
 
     dark_since = None
     low_count = 0
     next_battery = 0.0
     next_keyboard_scan = time.monotonic() + 5
+    next_upkeep = 0.0
     try:
         while True:
             key = drain_keys(keyboards, 1.0)
@@ -360,6 +365,17 @@ def main():
                 elif now - dark_since >= IDLE_DELAY:
                     idle.enter()
 
+            if now >= next_upkeep:
+                # Re-applied periodically: re-plugged/re-enumerated devices and
+                # restarted launchers come back with their defaults.
+                next_upkeep = now + 10
+                if DO_AUTOSUSPEND:
+                    usb_autosuspend(True)
+                if AUDIO_ALWAYS:
+                    pid = launcher_pid()
+                    if pid:
+                        idle.park_audio(pid)
+
             if now >= next_battery:
                 next_battery = now + 20
                 low_count = low_count + 1 if battery_low() else 0
@@ -372,6 +388,9 @@ def main():
     finally:
         if idle.active:
             idle.leave('exit')
+        idle.restore_audio()
+        if DO_AUTOSUSPEND:
+            usb_autosuspend(False)   # back to the kernel default
 
 
 if __name__ == '__main__':
