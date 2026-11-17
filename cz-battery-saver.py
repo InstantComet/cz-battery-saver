@@ -63,7 +63,7 @@ DEFAULTS = {
     'IDLE_STOP_LAUNCHER': '1',
     'USB_AUTOSUSPEND': '1',
     'AUDIO_ALWAYS': '0',
-    'DESKTOP_UNPLUG_MINUTES': '0',   # close Desk Mode's desktop after HDMI unplug
+    'DESKTOP_UNPLUG_MINUTES': '1',   # close Desk Mode's desktop after HDMI unplug
 }
 
 

@@ -33,7 +33,7 @@ The package also adds a **Battery Saver** app <img src="app/cz-battery-saver.png
   - **Sound card**: let it sleep while the screen is off.
   - **Launcher**: pause it while the screen is off.
 - **Auto shutdown**: the low-battery shutdown threshold (5–20%, or Never).
-- **HDMI unplugged** (only with [Desk Mode](https://github.com/InstantComet/cz-desk-mode) installed): close its HDMI desktop after HDMI has been unplugged for 1–30 min, freeing ~55 MB of RAM. Off (`Keep desktop`) by default, because unsaved work in the desktop is lost.
+- **HDMI unplugged** (only with [Desk Mode](https://github.com/InstantComet/cz-desk-mode) installed): close its HDMI desktop after HDMI has been unplugged for 1–30 min, freeing ~55 MB of RAM. Default 1 min, so a loose cable does not close it at once. Unsaved work in the desktop is lost; choose `Keep desktop` to turn this off.
 - The header shows whether the service is running, the live battery current and the charge level. Press `I` for a short summary and the CPU temperature.
 
 Green values save power; grey values leave things as they are. Keys follow the launcher's convention: `F`/`X` move, `Z`/`C` or `Enter` change, `I` info, `Esc` back to the launcher. Each change is applied within a few seconds: the app writes `/var/lib/cz-battery-saver/settings`, which the service watches. **USB + Ethernet** is the exception: it is applied by a udev rule when the device appears, so a change takes effect after a reboot.

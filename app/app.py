@@ -50,7 +50,7 @@ RED = '#ff5a52'       # error, very low battery
 
 DEFAULTS = {'ENABLED': '1', 'IDLE_DELAY': '5', 'LOW_BATTERY_PERCENT': '8', 'IDLE_AUDIO': '1',
             'IDLE_STOP_LAUNCHER': '1', 'USB_AUTOSUSPEND': '1', 'AUDIO_ALWAYS': '0',
-            'DESKTOP_UNPLUG_MINUTES': '0'}
+            'DESKTOP_UNPLUG_MINUTES': '1'}
 # key, label, choices (None = on/off), hint shown after the label, indent
 ROWS = [
     ('ENABLED', 'Power saving', None, '', 0),
