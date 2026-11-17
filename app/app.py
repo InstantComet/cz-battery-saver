@@ -32,6 +32,7 @@ UNIT = 'cz-battery-saver.service'
 BACKLIGHT = Path('/sys/class/backlight/backlight/brightness')
 BATTERY = Path('/sys/class/power_supply/bq27220-0')
 KEYBOARD = '/dev/input/cardputer-zero-internal'
+LAUNCHER_CONFIG = HOME / '.config/cardputerzero/config.json'
 DEJAVU = '/usr/share/fonts/truetype/dejavu/'
 FONT, FONT_BOLD = DEJAVU + 'DejaVuSans.ttf', DEJAVU + 'DejaVuSans-Bold.ttf'
 FONT_TITLE = '/usr/share/APPLaunch/share/font/Montserrat-Bold.ttf'  # launcher's own title face
@@ -88,6 +89,14 @@ def unit_property(name):
         return 'unknown'
 
 
+def launcher_brightness():
+    """The launcher's own brightness setting, so a dark start matches it."""
+    try:
+        return int(json.loads(LAUNCHER_CONFIG.read_text())['brightness'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 60
+
+
 def parse_settings(text):
     out = {}
     for line in text.splitlines():
@@ -131,6 +140,7 @@ def status():
         'battery': read(BATTERY / 'capacity'),
         'charging': read(BATTERY / 'status'),
         'current': current,
+        'temperature': read('/sys/class/thermal/thermal_zone0/temp'),
     }
 
 
@@ -238,13 +248,18 @@ class App:
                font=self.small, fill=MUTED)
 
         if self.details:
+            try:
+                temperature = f"{int(self.state['temperature']) / 1000:.0f} \u00b0C"
+            except ValueError:
+                temperature = '?'
             lines = [('Screen on: ~416 → ~311 mA', FG),
                      ('Screen off: ~395 → ~233 mA', FG),
                      ('USB sleeps only while unused; plugging', MUTED),
                      ('in a device or cable wakes it.', MUTED),
-                     ('Any key wakes from screen-off idle.', MUTED)]
+                     ('Any key wakes from screen-off idle.', MUTED),
+                     ('CPU ' + temperature + '  \u00b7  battery ' + self.state['charging'].lower(), MUTED)]
             for i, (line, colour) in enumerate(lines):
-                d.text((12, 44 + i * 19 + (2 if i >= 2 else 0)), line, font=self.font if i < 2 else self.small, fill=colour)
+                d.text((12, 43 + i * 17 + (2 if i >= 2 else 0)), line, font=self.font if i < 2 else self.small, fill=colour)
             footer = [('ESC', 'Back')]
         else:
             for slot, i in enumerate(range(self.top, min(self.top + VISIBLE, len(ROWS)))):
@@ -353,7 +368,7 @@ def run():
     signal.signal(signal.SIGTERM, lambda *_: setattr(app, 'running', False))
     signal.signal(signal.SIGINT, lambda *_: setattr(app, 'running', False))
     if int(read(BACKLIGHT, '0') or 0) == 0:
-        BACKLIGHT.write_text(read(HOME / '.config/zero-control/brightness', '60'))
+        BACKLIGHT.write_text(str(launcher_brightness()))
     try:
         while app.running:
             now = time.monotonic()
