@@ -1,0 +1,10 @@
+# Settings for cardzero-idle.service; restart the service after editing:
+#   sudo systemctl restart cardzero-idle
+# Seconds the backlight must stay off before deep idle starts.
+IDLE_DELAY=5
+# Shut down cleanly at or below this battery percentage while discharging (0 = off).
+LOW_BATTERY_PERCENT=8
+# Individual measures (1 = on, 0 = off).
+IDLE_AUDIO=1
+IDLE_STOP_LAUNCHER=1
+IDLE_USB=1

@@ -1,0 +1,13 @@
+[Unit]
+Description=CardputerZero deep idle when the screen is off, low-battery shutdown
+After=multi-user.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/cardzero-idle
+ExecStart=/usr/bin/python3 /usr/local/sbin/cardzero-idle.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
