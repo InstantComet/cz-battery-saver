@@ -8,7 +8,7 @@
 
 CardputerZero 用的是树莓派 CM0（BCM2837），不支持挂起到内存。原厂状态下，亮屏不操作时电池电流约 416 mA；启动器熄屏以后仍有约 395 mA。两种情况下，1750 mAh 的电池都只能撑 4.2–4.4 小时左右。
 
-**Battery Saver**（包名 `cz-battery-saver`）是一个小服务，能去掉大部分白白浪费的电。它以桌面用户 `pi` 运行，不需要 root。在作者的设备上：
+**Battery Saver**（包名 `cz-battery-saver`）是一个小服务，能去掉大部分白白浪费的电。它以桌面用户（uid 1000，即 `pi`，或首次设置时改成的名字）运行，不需要 root。在作者的设备上：
 
 | | 原厂 | 装了 Battery Saver | 续航（1750 mAh） |
 |---|---|---|---|
@@ -114,7 +114,7 @@ sudo bash install.sh
 
 软件包会安装：
 - `/usr/lib/cz-battery-saver/cz-battery-saver.py`：服务本体
-- `/usr/lib/systemd/system/cz-battery-saver.service`（会被启用并立即启动，`User=pi`）
+- `/usr/lib/systemd/system/cz-battery-saver.service`（会被启用并立即启动，`User=1000`）
 - `/usr/lib/udev/rules.d/70-cz-battery-saver.rules`（USB 自动挂起）
 - `/etc/default/cz-battery-saver`（默认配置）
 - Battery Saver app：
@@ -144,10 +144,10 @@ sudo bash install.sh
 
 ## 注意事项
 
-- **测试环境：** Debian 13（trixie）、内核 `6.18.39+rpt-rpi-v8`、原厂启动器 `M5CardputerZero-APPLaunch`。默认设备用户是 `pi`（uid 1000）。
+- **测试环境：** Debian 13（trixie）、内核 `6.18.39+rpt-rpi-v8`、原厂启动器 `M5CardputerZero-APPLaunch`。桌面用户按 uid 1000 识别：原厂的 `pi`，首次设置改名后也一样。
 - **熄屏判定：** 读取 `/sys/class/backlight/backlight/brightness` 是否为 0。启动器的熄屏超时（设置 > 屏幕 > DarkTime）到了就会把它设为 0。
 - **音频播放：** 其他应用的声音照常播放。守护进程只挪启动器自己的音频流，而且启动器有子应用在运行时不会被暂停。
-- **运行时不需要 root：** 服务以 `pi` 运行。暂停启动器、挪音频流、读键盘只需要这个用户本来的权限；低电量关机靠原厂镜像里允许 `sudo` 组关机的 polkit 规则；唯一需要 root 的 USB 网卡 `power/control` 由 udev 写入。
+- **运行时不需要 root：** 服务以桌面用户（uid 1000）运行。暂停启动器、挪音频流、读键盘只需要这个用户本来的权限；低电量关机靠原厂镜像里允许 `sudo` 组关机的 polkit 规则；唯一需要 root 的 USB 网卡 `power/control` 由 udev 写入。
 - **启动顺序：** 服务不等待 `multi-user.target`。有些系统镜像设置成开机进命令行后，`userconfig.service`（tty8 上的首次开机改名向导）永远不会结束，排在 `multi-user.target` 之后的服务就都启动不了。如果 `systemctl list-jobs` 显示它卡住，而你的用户早已设置好，运行 `sudo systemctl disable userconfig.service` 即可。
 - **不要在运行时解绑再重新绑定 `imx219` 摄像头驱动。** 测试时这么做导致内核在 `unicam_async_complete` 里崩溃（oops）。守护进程不会碰摄像头。
 

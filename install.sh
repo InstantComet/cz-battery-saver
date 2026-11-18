@@ -10,11 +10,11 @@ if [ -e /etc/systemd/system/cardzero-idle.service ] || [ -e /usr/local/sbin/card
   echo 'Removing the old cardzero-idle install...'
   systemctl disable --now cardzero-idle.service 2>/dev/null || true
   if [ -f /etc/default/cardzero-idle ]; then
-    install -d -o pi -g pi -m 0755 /var/lib/cz-battery-saver
+    install -d -o 1000 -g 1000 -m 0755 /var/lib/cz-battery-saver
     { echo '# Migrated from /etc/default/cardzero-idle'
       grep -E '^(IDLE_DELAY|LOW_BATTERY_PERCENT|IDLE_AUDIO|IDLE_STOP_LAUNCHER|USB_AUTOSUSPEND|AUDIO_ALWAYS)=' /etc/default/cardzero-idle || true
     } > /var/lib/cz-battery-saver/settings
-    chown pi:pi /var/lib/cz-battery-saver/settings
+    chown 1000:1000 /var/lib/cz-battery-saver/settings
   fi
   rm -f /usr/local/sbin/cardzero-idle.py /etc/systemd/system/cardzero-idle.service /etc/default/cardzero-idle \
         /etc/sudoers.d/cardzero-idle /usr/share/APPLaunch/applications/cardzero-idle.desktop \

@@ -8,7 +8,7 @@
 
 The CardputerZero (Raspberry Pi CM0, BCM2837) has no suspend-to-RAM. Out of the box it draws about 416 mA from the battery with the screen on and idle, and still about 395 mA after the launcher turns the screen off. That is roughly 4.2–4.4 h from the 1750 mAh cell either way.
 
-**Battery Saver** (`cz-battery-saver`) is a small service that removes most of that waste. It runs as the desktop user `pi`, not root. On the author's device:
+**Battery Saver** (`cz-battery-saver`) is a small service that removes most of that waste. It runs as the desktop user (uid 1000: `pi`, or whatever name you gave it at first-boot setup), not root. On the author's device:
 
 | | Stock | With Battery Saver | Runtime (1750 mAh) |
 |---|---|---|---|
@@ -114,7 +114,7 @@ sudo bash install.sh
 
 The package installs:
 - `/usr/lib/cz-battery-saver/cz-battery-saver.py`, the service
-- `/usr/lib/systemd/system/cz-battery-saver.service` (enabled and started; `User=pi`)
+- `/usr/lib/systemd/system/cz-battery-saver.service` (enabled and started; `User=1000`)
 - `/usr/lib/udev/rules.d/70-cz-battery-saver.rules` (USB autosuspend)
 - `/etc/default/cz-battery-saver` (default settings)
 - The Battery Saver app:
@@ -144,10 +144,10 @@ Use the Battery Saver app. The package defaults are in `/etc/default/cz-battery-
 
 ## Notes and caveats
 
-- Tested on a CardputerZero running Debian 13 (trixie), kernel `6.18.39+rpt-rpi-v8`, and the stock `M5CardputerZero-APPLaunch` launcher. The device user is assumed to be `pi` (uid 1000).
+- Tested on a CardputerZero running Debian 13 (trixie), kernel `6.18.39+rpt-rpi-v8`, and the stock `M5CardputerZero-APPLaunch` launcher. The desktop user is taken to be uid 1000: the stock `pi` user, also after first-boot setup renames it.
 - Screen-off detection reads `/sys/class/backlight/backlight/brightness == 0`, which is what the launcher's screen timeout (Settings > Screen > DarkTime) sets.
 - Audio started by another app still plays: only the launcher's own stream is moved, and the launcher is not paused while one of its apps is running.
-- No root at runtime: the service runs as `pi`. Pausing the launcher, moving its audio and reading the keyboard need only that user's rights; the low-battery shutdown uses the stock image's polkit rule that lets the `sudo` group power off; the one root-only setting, the USB chip's `power/control`, is written by udev.
+- No root at runtime: the service runs as the desktop user (uid 1000). Pausing the launcher, moving its audio and reading the keyboard need only that user's rights; the low-battery shutdown uses the stock image's polkit rule that lets the `sudo` group power off; the one root-only setting, the USB chip's `power/control`, is written by udev.
 - The service does not wait for `multi-user.target`. On some images `userconfig.service` (the first-boot "rename user" dialog on tty8) never finishes when booting to the console, and that would block anything ordered after `multi-user.target`. If `systemctl list-jobs` shows it stuck and your user is already set up, `sudo systemctl disable userconfig.service` fixes it.
 - Don't unbind and re-bind the `imx219` camera driver at runtime. While measuring, a re-bind oopsed the kernel in `unicam_async_complete`. The daemon does not touch the camera.
 

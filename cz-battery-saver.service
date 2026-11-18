@@ -8,9 +8,11 @@ After=systemd-user-sessions.service
 Type=simple
 # Not root: the launcher, PipeWire and the keyboard belong to the desktop user,
 # and the stock image's polkit rules let that user power off.
-User=pi
-Group=pi
-# /var/lib/cz-battery-saver, owned by pi: the app's settings and the USB flag
+# By uid, not name: first-boot setup renames the default user "pi" but keeps
+# uid/gid 1000.
+User=1000
+Group=1000
+# /var/lib/cz-battery-saver, owned by that user: the app's settings and the USB flag
 StateDirectory=cz-battery-saver
 StateDirectoryMode=0755
 Environment=XDG_RUNTIME_DIR=/run/user/1000
